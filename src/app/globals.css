@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* ── Theme D · minimal, with a hint of colour ─────────────────────────
+   Warm paper surfaces and dark ink, a deep pine-teal for actions and
+   links, mint-tinted washes for hover/selection, and the teal chart hue
+   for data. Light is the default; dark applies when the OS prefers it
+   (unless the user picked light) or when the user picked dark. */
+
+:root {
+  color-scheme: light;
+  --background: #f7f6f1;
+  --foreground: #16201e;
+  --card: #fffffd;
+  --muted: #66716e;
+  --border: #e3e5df;
+  --primary: #1f5c56;
+  --primary-foreground: #f6fbf9;
+  --accent: #e4efeb;
+  --chart-1: #0d9488; /* validated for the light surface */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --background: #0f1312;
+    --foreground: #e8ece9;
+    --card: #171c1b;
+    --muted: #97a29e;
+    --border: #283130;
+    --primary: #8fd3c7;
+    --primary-foreground: #0f1f1c;
+    --accent: #1f2d2a;
+    --chart-1: #12a594; /* validated for the dark surface */
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0f1312;
+  --foreground: #e8ece9;
+  --card: #171c1b;
+  --muted: #97a29e;
+  --border: #283130;
+  --primary: #8fd3c7;
+  --primary-foreground: #0f1f1c;
+  --accent: #1f2d2a;
+  --chart-1: #12a594;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-chart-1: var(--chart-1);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+}
