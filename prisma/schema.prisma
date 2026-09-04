@@ -1,0 +1,218 @@
+// Mindful Journal — Prisma schema
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── Auth & accounts ─────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String?
+  passwordHash  String
+  emailVerified DateTime?
+  role          Role          @default(USER)
+  status        AccountStatus @default(ACTIVE)
+  timezone      String        @default("UTC")
+  // Bumped on password change / "log out everywhere"; JWTs carrying an older
+  // value are rejected, which invalidates every other session.
+  sessionVersion Int          @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  lastActiveAt  DateTime?
+
+  otpCodes       OtpCode[]
+  journalEntries JournalEntry[]
+  habits         Habit[]
+  goals          Goal[]
+  aiInteractions AiInteraction[]
+  auditLogs      AuditLog[]
+  checkIns       CheckIn[]
+  weeklyRecaps   WeeklyRecap[]
+
+  @@index([createdAt])
+}
+
+// ───────────────────────── Daily check-in ─────────────────────────
+
+// A quick structured snapshot of the day: mood meter, what shaped it, and how
+// the user feels about their goals. Complements (does not replace) the journal.
+model CheckIn {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkDate    DateTime @db.Date
+  moodScore    Int // 1–5
+  energy       Int? // 1 low, 2 medium, 3 high
+  factors      Json     @default("[]") // [{ key: "sleep", effect: "helped" | "hurt" }]
+  goalStatuses Json     @default("{}") // { goalId: "ON_TRACK" | "SLIPPING" | "STUCK" }
+  note         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, checkDate])
+  @@index([userId, checkDate])
+}
+
+enum OtpPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+}
+
+// One-time codes are stored hashed; the plaintext only ever lives in the email.
+model OtpCode {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  purpose   OtpPurpose
+  expiresAt DateTime
+  attempts  Int        @default(0)
+  usedAt    DateTime?
+  createdAt DateTime   @default(now())
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
+}
+
+// ───────────────────────── Journal & mood ─────────────────────────
+
+model JournalEntry {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entryDate  DateTime @db.Date // the calendar day this entry is about (user's timezone)
+  title      String?
+  content    String
+  moodScore  Int // 1 (very low) … 5 (very good)
+  emotions   String[] // free-form tags, e.g. ["calm", "anxious", "grateful"]
+  gratitude  String?
+  template   String? // guided-journaling template key, e.g. "three-good-things"
+  wordCount  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, entryDate])
+  @@index([userId, createdAt])
+}
+
+// Cached once per user per completed week so the dashboard card is cheap and
+// the optional AI one-liner is generated at most once.
+model WeeklyRecap {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekStart DateTime @db.Date // Monday
+  stats     Json
+  aiLine    String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, weekStart])
+}
+
+// ───────────────────────── Habits & goals ─────────────────────────
+
+model Habit {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  icon        String?
+  isArchived  Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  logs        HabitLog[]
+
+  @@index([userId, isArchived])
+}
+
+model HabitLog {
+  id        String   @id @default(cuid())
+  habitId   String
+  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  logDate   DateTime @db.Date
+  completed Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([habitId, logDate])
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  PAUSED
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  targetDate  DateTime?
+  progress    Int        @default(0) // 0–100
+  status      GoalStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([userId, status])
+}
+
+// ───────────────────────── AI assistant ─────────────────────────
+
+enum AiInteractionKind {
+  REFLECTION
+  PATTERNS
+  SELF_CARE
+  PROMPT
+  CHECKIN
+}
+
+// Stores the AI's response so the user can revisit it; the prompt input is NOT
+// stored separately because it is derived from journal entries the user owns.
+model AiInteraction {
+  id           String            @id @default(cuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind         AiInteractionKind
+  entryIds     String[] // journal entries the user chose to include
+  response     String
+  inputTokens  Int?
+  outputTokens Int?
+  createdAt    DateTime          @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ───────────────────────── Admin / audit ─────────────────────────
+
+// Content-free audit trail: records *that* something happened, never journal text.
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String // e.g. "user.register", "user.login", "admin.suspend_user"
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([action, createdAt])
+}
